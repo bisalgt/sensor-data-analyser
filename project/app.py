@@ -6,6 +6,8 @@ import socket, struct
 import pandas as pd
 import pyqtgraph as pg
 
+from process_raw_adc import stft_of_complete_raw_adc
+
 
 
 class RedPitayaSensor:
@@ -30,7 +32,7 @@ class RedPitayaSensor:
 
     def get_data_from_server(self):
         packet = self.udp_client_socket.recv(self.buffer_size)
-        self.sensor_status_message = "Connected Successfully!"
+        self.sensor_status_message = f"Sensor Connected Successfully at {self.server_address_port}!"
         print(self.sensor_status_message)
         print(f"Total Received : {len(packet)} Bytes.")
         header_length = int(struct.unpack('@f', packet[:4])[0])
@@ -102,8 +104,10 @@ class MainWindow(QMainWindow):
         self.button_is_checked = True
         self.realtime_chkbox_checked = False
         self.show_region_to_select = False
+        self.raw_adc_data = None
+        self.previous_range_selector_region = (100, 1000)
 
-        self.setWindowTitle("My App")
+        self.setWindowTitle("Sensor Data Analyser")
 
         self.plot_widget = pg.PlotWidget()
         
@@ -167,8 +171,8 @@ class MainWindow(QMainWindow):
             self.show_region_to_select = True
             # print(self.show_region_to_select)
             self.range_selector = pg.LinearRegionItem()
-            self.range_selector.setRegion((1500, 5500))
             self.range_selector.sigRegionChangeFinished.connect(self.region_changed_on_linear_region)
+            self.range_selector.setRegion(self.previous_range_selector_region)
             print(self.range_selector.getRegion())
             self.plot_widget.addItem(self.range_selector)
         elif state == Qt.CheckState.Unchecked.value:
@@ -178,9 +182,11 @@ class MainWindow(QMainWindow):
     def confirm_region_selection_btn_handler(self):
         if self.show_region_to_select:
             print("Confirmed Region : ", self.range_selector.getRegion())
+            self.previous_range_selector_region = self.range_selector.getRegion()
             self.plot_adc_data()
-            print(self.show_region_chkbox.checkState().value)
+            self.get_stft_of_complete_raw_adc()
             self.show_region_handler(self.show_region_chkbox.checkState().value)
+            
 
     def reset_btn_view(self):
         self.realtime_chkbox.setDisabled(False)
@@ -214,12 +220,13 @@ class MainWindow(QMainWindow):
             y = self.rp_sensor.get_data_from_server().to_list()
             # return
         # y = rp_sensor.get_data_from_server().to_list()
+
+        self.raw_adc_data = y
+
         # Plot the data
         self.plot = self.plot_widget.plot(x, y)
         self.plot_widget.setBackground('black')
-        print("Show region to select : ", self.show_region_to_select)
-        if self.show_region_to_select:
-            pass
+        print("Show region to select : ", self.range_selector.getRegion())
         if self.realtime_chkbox_checked == False:
             return False
 
@@ -233,6 +240,8 @@ class MainWindow(QMainWindow):
             self.confirm_region_btn.setDisabled(True)
             self.worker = Worker(self.func_is_realtime_checked, self.rp_sensor)
             self.worker.signals.result.connect(self.plot_adc_data)
+            # start_index, end_index = self.range_selector.getRegion()
+            # self.worker.signals.result.connect(self.get_stft_of_complete_raw_adc)
             self.threadpool.start(self.worker)
         else:
             self.realtime_chkbox_checked = False
@@ -243,17 +252,22 @@ class MainWindow(QMainWindow):
         print("Checked : ", self.realtime_chkbox_checked)
         return self.realtime_chkbox_checked
     
+    def get_stft_of_complete_raw_adc(self):
+        print("INside STFT of app.py")
+        if self.show_region_to_select:
+            print("correct status stft------------------")
+            start_index, end_index = self.range_selector.getRegion()
+            stft_of_signal = stft_of_complete_raw_adc(self.raw_adc_data, start_index, end_index)
+
+
     # def stop_thread(self):
     #     self.worker
             
 
 
 
-
-
-app = QApplication(sys.argv)
-
-window = MainWindow()
-window.show()
-
-app.exec()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    app.exec()
